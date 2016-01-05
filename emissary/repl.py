@@ -111,8 +111,12 @@ class repl(cmd.Cmd):
             self.display(response)
 
     def do_exit(self,line):
-        _curses.endwin()
-        raise SystemExit
+        try:
+            _curses.endwin()
+        except _curses.error:
+            pass
+        finally:
+            raise SystemExit
 
     def do_read(self,line):
         """

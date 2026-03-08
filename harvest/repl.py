@@ -25,7 +25,7 @@ except ImportError:
 class repl(cmd.Cmd):
 
     prompt = "> "
-    intro = "Harvest %s\Float64 %i\n" % (app.version, time.gmtime()[0])
+    intro = "Harvest %s\nFloat64 %i\n" % (app.version, time.gmtime()[0])
     ruler = '-'
     width = 80
 

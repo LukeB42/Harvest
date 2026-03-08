@@ -7,8 +7,8 @@ setup(
     version="3.0.0",
     description='A microservice for indexing the plain text of articles and essays',
     author='Luke Brooks',
-    author_email='luke@psybernetics.org.uk',
-    url='http://psybernetics.org.uk/harvest',
+    author_email='luke@float64.com',
+    url='https://github.com/lukeb42/harvest',
     packages=['harvest', 'harvest.resources', 'harvest.controllers'],
     include_package_data=True,
     install_requires=[

@@ -1,16 +1,23 @@
 import os
 import time
-from emissary.controllers.utils import tconv
-from window import Window, Pane, ALIGN_LEFT, EXPAND, palette
+from harvest import app
+from harvest.controllers.utils import tconv
+from harvest.controllers.window import Window, Pane, ALIGN_LEFT, EXPAND, palette
+
+class TitleBar(Pane):
+    geometry = [EXPAND, 1]
+
+    def update(self):
+        label = "Harvest %s" % app.version
+        self.change_content(0, label, ALIGN_LEFT, palette(-1, -1))
 
 class EmissaryMenu(Pane):
     """
     Defines a menu where items call local methods.
     """
     geometry = [EXPAND, EXPAND]
-    # Default and selection colours.
-    col = [-1, -1] # fg, bg
-    sel = [-1,  "blue"]
+    col  = [-1, -1]
+    sel  = [-1, "blue"]
     items = []
 
     def update(self):
@@ -19,39 +26,37 @@ class EmissaryMenu(Pane):
                 colours = palette(self.sel[0], self.sel[1])
             else:
                 colours = palette(self.col[0], self.col[1])
-            text = ' ' + item[1]
-            spaces = ' ' * (self.width - len(text)) 
-            text += spaces
+            text   = ' ' + item[1]
+            spaces = ' ' * (self.width - len(text))
+            text  += spaces
             self.change_content(i, text + '\n', ALIGN_LEFT, colours)
 
     def process_input(self, character):
-        # Handle the return key and the right arrow key
         if character == 10 or character == 13 or character == 261:
             for i, item in enumerate(self.items):
-                if item[0]:    
+                if item[0]:
                     func = getattr(self, item[2].lower(), None)
                     if func:
                         func()
 
-        # Handle navigating the menu
         elif character in [259, 258, 339, 338]:
             for i, item in enumerate(self.items):
-                if item[0]:    
-                    if character == 259: # up arrow
+                if item[0]:
+                    if character == 259:  # up arrow
                         if i == 0: break
                         item[0] = 0
-                        self.items[i-1][0] = 1
+                        self.items[i - 1][0] = 1
                         break
-                    if character == 258: # down arrow
-                        if i+1 >= len(self.items): break
+                    if character == 258:  # down arrow
+                        if i + 1 >= len(self.items): break
                         item[0] = 0
-                        self.items[i+1][0] = 1
+                        self.items[i + 1][0] = 1
                         break
-                    if character == 339: # page up
+                    if character == 339:  # page up
                         item[0] = 0
                         self.items[0][0] = 1
                         break
-                    if character == 338: # page down
+                    if character == 338:  # page down
                         item[0] = 0
                         self.items[-1][0] = 1
                         break
@@ -61,12 +66,10 @@ class FeedGroups(EmissaryMenu):
     def update(self):
         if not self.items:
             (res, status) = self.window.c.get("feeds")
-            
 
 class Feeds(EmissaryMenu):
     geometry = [EXPAND, EXPAND]
     items = []
-
 
 class Articles(Pane):
     """
@@ -74,8 +77,8 @@ class Articles(Pane):
     """
     geometry = [EXPAND, EXPAND]
     items = []
-    col = [-1, -1] # fg, bg
-    sel = ["black",  "white"]
+    col  = [-1, -1]
+    sel  = ["black", "white"]
     avail = ["black", "green"]
 
     def update(self):
@@ -90,16 +93,15 @@ class Articles(Pane):
                     colours = palette(self.sel[0], self.sel[1])
             else:
                 colours = palette(self.col[0], self.col[1])
-            text = ' ' + item[1]
-            spaces = ' ' * (self.width - len(text)) 
-            text += spaces
+            text   = ' ' + item[1]
+            spaces = ' ' * (self.width - len(text))
+            text  += spaces
             self.change_content(i, text + '\n', ALIGN_LEFT, colours)
 
     def process_input(self, character):
-        # Handle the return key and the right arrow key
         if character in [10, 13, 261]:
             for i, item in enumerate(self.items):
-                if item[0]:    
+                if item[0]:
                     uid = item[2]
                     (article, status) = self.window.c.get('articles/' + uid)
                     statuspane = self.window.get("status")
@@ -108,40 +110,39 @@ class Articles(Pane):
                         statuspane.status = str(status)
                     else:
                         self.reader.article = article
-                        if article['content'] == None:
+                        if article['content'] is None:
                             self.reader.data = ""
                         else:
-                            self.reader.data = article['content'].encode("ascii", "ignore")
+                            self.reader.data = article['content']
                         self.reader.active = True
                         self.active = False
 
-        elif character == 114:             # r to refresh
+        elif character == 114:  # r to refresh
             self.fetch_items()
 
-        elif character == 9:               # tab to reader
+        elif character == 9:    # tab to reader
             reader = self.window.get("reader")
             reader.active = True
             self.active   = False
 
-        # Handle navigating the menu
         elif character in [259, 258, 339, 338]:
             for i, item in enumerate(self.items):
-                if item[0]:    
-                    if character == 259: # up arrow
+                if item[0]:
+                    if character == 259:  # up arrow
                         if i == 0: break
                         item[0] = 0
-                        self.items[i-1][0] = 1
+                        self.items[i - 1][0] = 1
                         break
-                    if character == 258: # down arrow
-                        if i+1 >= len(self.items): break
+                    if character == 258:  # down arrow
+                        if i + 1 >= len(self.items): break
                         item[0] = 0
-                        self.items[i+1][0] = 1
+                        self.items[i + 1][0] = 1
                         break
-                    if character == 339: # page up
+                    if character == 339:  # page up
                         item[0] = 0
                         self.items[0][0] = 1
                         break
-                    if character == 338: # page down
+                    if character == 338:  # page down
                         item[0] = 0
                         self.items[-1][0] = 1
                         break
@@ -155,10 +156,10 @@ class Articles(Pane):
             status.status = str(res)
 
     def fill_menu(self, res):
-        self.items = []
+        self.items   = []
         self.content = []
         for r in res["data"]:
-            self.items.append([0, r['title'].encode("ascii", "ignore"), r['uid'], r['content_available']])
+            self.items.append([0, r['title'], r['uid'], r['content_available']])
         if self.items:
             self.items[0][0] = 1
 
@@ -174,9 +175,9 @@ class Reader(Pane):
 
     def update(self):
         if self.article:
-            feed = self.article.get('feed', None)
+            feed    = self.article.get('feed', None)
             heading = "%s\n%s (%s %s ago)\n%s\n\n" % \
-                (self.article['title'].encode("ascii","ignore"), feed if feed else "",
+                (self.article['title'], feed if feed else "",
                 self.article['uid'], tconv(int(time.time()) - int(self.article['created'])),
                 self.article['url'])
             self.change_content(0, heading)
@@ -185,26 +186,26 @@ class Reader(Pane):
 
     def process_input(self, character):
         self.window.window.clear()
-        if character == 259:                       # Up arrow
+        if character == 259:    # Up arrow
             if self.position != 0:
                 self.position -= 1
-        elif character == 258:                     # Down arrow
+        elif character == 258:  # Down arrow
             self.position += 1
-        elif character == 339:                     # Page up
+        elif character == 339:  # Page up
             if self.position - self.height < 0:
                 self.position = 0
             else:
                 self.position -= self.height
-        elif character == 338:                     # Page down
+        elif character == 338:  # Page down
             if not self.position + self.height > len(self.data.split('\n')):
                 self.position += self.height
 
-        elif character in [260, 9]:                # Left arrow or tab
+        elif character in [260, 9]:  # Left arrow or tab
             articles = self.window.get("articles")
             articles.active = True
             self.active = False
 
-        elif character in [70, 102]:               # f/F to fullscreen the pager
+        elif character in [70, 102]:  # f/F to fullscreen the pager
             articles = self.window.get("articles")
             if articles.hidden:
                 articles.hidden = False
@@ -212,29 +213,29 @@ class Reader(Pane):
                 articles.hidden = True
 
 class StatusLine(Pane):
-    geometry = [EXPAND, 1]
-    content = []
-    buffer = ""
-    status = ""
+    geometry  = [EXPAND, 1]
+    content   = []
+    buffer    = ""
+    status    = ""
     searching = False
-    tagline = "Thanks God."
+    tagline   = "Thanks God."
 
     def update(self):
         if self.searching:
-            self.change_content(0, "/"+self.buffer, palette("black", "white"))
+            self.change_content(0, "/" + self.buffer, palette("black", "white"))
         else:
-            state = self.tagline
-            state += ' ' * ((self.width /2) - len(self.tagline) - (len(str(self.status))/2))
+            state  = self.tagline
+            state += ' ' * ((self.width // 2) - len(self.tagline) - (len(str(self.status)) // 2))
             state += str(self.status)
             self.change_content(0, state)
 
     def process_input(self, character):
         self.window.window.clear()
-        if not self.searching and character in [80, 112]: # p/P to enter a python REPL
-            try:                                          # You might need to
-                import pprint                             # "sudo pip install ptpython"
-                from ptpython.repl import embed           # to enable this feature.
-                
+        if not self.searching and character in [80, 112]:  # p/P to enter a python REPL
+            try:
+                import pprint
+                from ptpython.repl import embed
+
                 def configure(repl):
                     repl.prompt_style                   = "ipython"
                     repl.vi_mode                        = True
@@ -246,14 +247,12 @@ class StatusLine(Pane):
                     repl.use_code_colorscheme("native")
 
                 def a(uid):
-                    """
-                    Return raw article text given an article uid.
-                    """
+                    """Return raw article text given an article uid."""
                     response = self.window.c.get("articles/%s" % uid)
                     if response[1] == 200:
                         return response[0]['content']
                     return ""
-                
+
                 p = pprint.PrettyPrinter()
                 p = p.pprint
                 l = {"a": a, "c": self.window.c, "p": p, "window": self.window}
@@ -269,10 +268,10 @@ class StatusLine(Pane):
             except ImportError:
                 pass
 
-        if not self.searching and character == 47: # / to search
+        if not self.searching and character == 47:  # / to search
             articles = self.window.get("articles")
             articles.active = False
-            self.searching = True
+            self.searching  = True
             return
 
         if self.searching:
@@ -287,8 +286,7 @@ class StatusLine(Pane):
                     articles = self.window.get("articles")
                     articles.active = True
 
-            elif character == 10 or character == 13:     # Handle the return key
-                # Pass control back to the articles view
+            elif character == 10 or character == 13:  # Handle the return key
                 self.searching = False
                 articles = self.window.get("articles")
                 articles.active = True
@@ -296,11 +294,12 @@ class StatusLine(Pane):
                 reader.active = False
                 self.buffer = ""
             else:
-                try: self.buffer += chr(character)     # Append input to buffer
-                except: pass
-                # Perform a search for what's in the current buffer.
+                try:
+                    self.buffer += chr(character)
+                except:
+                    pass
                 articles = self.window.get("articles")
-                url = "articles/search/"+self.buffer+"?per_page=" + str(articles.height)
+                url = "articles/search/" + self.buffer + "?per_page=" + str(articles.height)
                 (res, status) = self.window.c.get(url)
                 if status == 200:
                     articles.fill_menu(res)
@@ -308,7 +307,8 @@ class StatusLine(Pane):
 
 window = Window(blocking=True)
 
-feedgroups = FeedGroups("feedgroups")
+titlebar          = TitleBar("titlebar")
+feedgroups        = FeedGroups("feedgroups")
 feedgroups.active = False
 feedgroups.hidden = True
 feeds             = Feeds("feeds")
@@ -319,10 +319,11 @@ reader            = Reader("reader")
 reader.wrap       = True
 reader.active     = False
 articles.reader   = reader
-status = StatusLine("status")
+status            = StatusLine("status")
 
+window.add(titlebar)
 panes = [feedgroups, feeds, articles, reader]
 window.add(panes)
 window.add(status)
 
-window.exit_keys.append(4) # ^D to exit
+window.exit_keys.append(4)  # ^D to exit

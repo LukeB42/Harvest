@@ -1,38 +1,39 @@
 # _*_ coding: utf-8 _*_
-# This file provides the HTTP endpoints for operating on individual feeds
-from emissary import app, db
+# This file provides the HTTP endpoints for operating on individual feeds.
+import asyncio
+from harvest import app, db
 from flask import request
-from flask.ext import restful
+from flask_restful import Resource, reqparse, abort
 from sqlalchemy import desc, and_
-from emissary.models import Feed, FeedGroup, Article
-from emissary.resources.api_key import auth
-from emissary.controllers.cron import CronError, parse_timings
-from emissary.controllers.utils import make_response, gzipped, cors
+from harvest.models import Feed, FeedGroup, Article
+from harvest.resources.api_key import auth
+from harvest.controllers.cron import CronError, parse_timings
+from harvest.controllers.utils import make_response, gzipped, cors, ArgsParser
 
-class FeedResource(restful.Resource):
+class FeedResource(Resource):
 
     @cors
     @gzipped
     def get(self, groupname, name):
         """
-         Review a feed.
+        Review a feed.
         """
         key = auth()
 
         feed = Feed.query.filter(and_(Feed.name == name, Feed.key == key)).first()
         if feed:
             return feed.jsonify()
-        restful.abort(404)
+        abort(404)
 
     @cors
     @gzipped
     def post(self, groupname, name):
         """
-         Modify an existing feed.
+        Modify an existing feed.
         """
         key = auth(forbid_reader_keys=True)
 
-        parser = restful.reqparse.RequestParser()
+        parser = reqparse.RequestParser()
         parser.add_argument("name",     type=str)
         parser.add_argument("group",    type=str)
         parser.add_argument("url",      type=str)
@@ -42,17 +43,14 @@ class FeedResource(restful.Resource):
 
         feed = Feed.query.filter(and_(Feed.key == key, Feed.name == name)).first()
         if not feed:
-            restful.abort(404)
+            abort(404)
 
         if args.name:
             if Feed.query.filter(and_(Feed.key == key, Feed.name == args.name)).first():
-                return {"message":"A feed already exists with this name."}, 304
+                return {"message": "A feed already exists with this name."}, 304
             feed.name = args.name
 
-        if args.group:
-            pass
-
-        if args.active != None:
+        if args.active is not None:
             feed.active = args.active
 
         if args.url:
@@ -61,77 +59,77 @@ class FeedResource(restful.Resource):
         if args.schedule:
             try:
                 parse_timings(args.schedule)
-            except CronError, err:
-                return {"message": err.message}, 500
+            except CronError as err:
+                return {"message": str(err)}, 500
             feed.schedule = args.schedule
 
         db.session.add(feed)
         db.session.commit()
 
         if args.url or args.schedule:
-            app.inbox.put([0, "stop", [feed.key, feed.name]])
-            app.inbox.put([0, "start", [feed.key, feed.name]])
-            
+            loop = asyncio.get_running_loop()
+            loop.create_task(app.feedmanager.handle_stop([key.id, feed.name]))
+            loop.create_task(app.feedmanager.handle_start([key.id, feed.name]))
+
         return feed.jsonify()
 
     @cors
     @gzipped
     def delete(self, groupname, name):
         """
-         Halt and delete a feed.
-         Default to deleting its articles.
+        Halt and delete a feed, along with its articles.
         """
-        key = auth(forbid_reader_keys=True)
+        key  = auth(forbid_reader_keys=True)
         feed = Feed.query.filter(and_(Feed.key == key, Feed.name == name)).first()
         if not feed:
-            restful.abort(404)
-        app.inbox.put([0, "stop", [key, feed.name]])
+            abort(404)
+
+        asyncio.get_running_loop().create_task(
+            app.feedmanager.handle_stop([key.id, feed.name])
+        )
         app.log('%s: %s: Deleting feed "%s".' % (feed.key.name, feed.group.name, feed.name))
+
         for a in feed.articles:
             db.session.delete(a)
 
         db.session.delete(feed)
         db.session.commit()
-
         return {}
 
-class FeedArticleCollection(restful.Resource):
+class FeedArticleCollection(Resource):
 
     @cors
     def get(self, groupname, name):
         """
-         Review the articles for a specific feed on this key.
+        Review the articles for a specific feed on this key.
         """
         key = auth()
 
         feed = Feed.query.filter(and_(Feed.name == name, Feed.key == key)).first()
-        if not feed: abort(404)
+        if not feed:
+            abort(404)
 
-        parser = restful.reqparse.RequestParser()
+        parser = ArgsParser()
         parser.add_argument("page",     type=int,  default=1)
         parser.add_argument("per_page", type=int,  default=10)
         parser.add_argument("content",  type=bool, default=None)
         args = parser.parse_args()
 
-        # Return a list of the JSONified Articles ordered by descending creation date and paginated.
         if args.content == True:
-            query = Article.query.filter(and_(Article.key == key, Article.content != None, Article.feed == feed))\
-                    .order_by(desc(Article.created)).paginate(args.page, args.per_page)
-
+            query = Article.query.filter(and_(Article.key == key, Article.content != None, Article.feed == feed)) \
+                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
             return make_response(request.url, query)
 
         elif args.content == False:
-            query = Article.query.filter(and_(Article.key == key, Article.content == None, Article.feed == feed))\
-                    .order_by(desc(Article.created)).paginate(args.page, args.per_page)
-
+            query = Article.query.filter(and_(Article.key == key, Article.content == None, Article.feed == feed)) \
+                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
             return make_response(request.url, query)
 
-        query = Article.query.filter(and_(Article.key == key, Article.feed == feed))\
-                .order_by(desc(Article.created)).paginate(args.page, args.per_page)
-
+        query = Article.query.filter(and_(Article.key == key, Article.feed == feed)) \
+                .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
         return make_response(request.url, query)
 
-class FeedSearch(restful.Resource):
+class FeedSearch(Resource):
 
     @cors
     def get(self, groupname, name, terms):
@@ -140,28 +138,28 @@ class FeedSearch(restful.Resource):
         """
         key = auth()
 
-        parser = restful.reqparse.RequestParser()
-        parser.add_argument("page",     type=int,  default=1)
-        parser.add_argument("per_page", type=int,  default=10)
-#        parser.add_argument("content", type=bool, default=None)
+        parser = ArgsParser()
+        parser.add_argument("page",     type=int, default=1)
+        parser.add_argument("per_page", type=int, default=10)
         args = parser.parse_args()
 
         fg = FeedGroup.query.filter(and_(FeedGroup.key == key, FeedGroup.name == groupname)).first()
         if not fg:
-            restful.abort(404)
+            abort(404)
 
         f = [f for f in fg.feeds if f.name == name]
-        if not f: abort(404)
+        if not f:
+            abort(404)
 
         f = f[0]
 
         query = Article.query.filter(
-                and_(Article.feed == f, Article.title.like("%" + terms + "%")))\
-                .order_by(desc(Article.created)).paginate(args.page, args.per_page)
+                and_(Article.feed == f, Article.title.like("%" + terms + "%"))) \
+                .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
 
         return make_response(request.url, query)
 
-class FeedStartResource(restful.Resource):
+class FeedStartResource(Resource):
 
     @cors
     def post(self, groupname, name):
@@ -169,11 +167,13 @@ class FeedStartResource(restful.Resource):
 
         feed = Feed.query.filter(and_(Feed.name == name, Feed.key == key)).first()
         if feed:
-            app.inbox.put([0, "start", [key, feed.name]])
+            asyncio.get_running_loop().create_task(
+                app.feedmanager.handle_start([key.id, feed.name])
+            )
             return feed.jsonify()
-        restful.abort(404)
+        abort(404)
 
-class FeedStopResource(restful.Resource):
+class FeedStopResource(Resource):
 
     @cors
     def post(self, groupname, name):
@@ -181,7 +181,8 @@ class FeedStopResource(restful.Resource):
 
         feed = Feed.query.filter(and_(Feed.name == name, Feed.key == key)).first()
         if feed:
-            app.inbox.put([0, "stop", [key, feed.name]])
+            asyncio.get_running_loop().create_task(
+                app.feedmanager.handle_stop([key.id, feed.name])
+            )
             return feed.jsonify()
-        restful.abort(404)
-
+        abort(404)

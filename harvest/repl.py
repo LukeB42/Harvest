@@ -5,29 +5,29 @@ import json
 import time
 import errno
 import _curses
-import optparse
+import argparse
 import textwrap
-from emissary import app
-from emissary.client import Client
-from emissary.models import APIKey
+from harvest import app
+from harvest.client import Client
+from harvest.models import APIKey
 from subprocess import Popen, PIPE
-from emissary.controllers.utils import tconv, spaceparse
-from emissary.controllers.tui import window
+from harvest.controllers.utils import tconv, spaceparse
+from harvest.controllers.tui import window
 
 try:
     from pygments import highlight
     from pygments.lexers import JsonLexer
     from pygments.styles import get_style_by_name, STYLE_MAP
     from pygments.formatters.terminal256 import Terminal256Formatter
-except ImportError: highlight = False
+except ImportError:
+    highlight = False
 
 class repl(cmd.Cmd):
 
     prompt = "> "
-    intro = "Emissary %s\nPsybernetics %i\n" % (app.version, time.gmtime()[0])
+    intro = "Harvest %s\nPsybernetics %i\n" % (app.version, time.gmtime()[0])
     ruler = '-'
     width = 80
-
 
     def parse_args(self, args):
         body = {}
@@ -35,19 +35,21 @@ class repl(cmd.Cmd):
         args = args.split()
         for i in args:
             try:
-                x=i.split('=')
+                x = i.split('=')
                 if type(parsed) == dict and not x[0] in parsed:
                     parsed[x[0]] = x[1]
                 else:
                     body[x[0]] = x[1]
-            except: continue
-        if type(parsed) == dict: body = parsed
+            except:
+                continue
+        if type(parsed) == dict:
+            body = parsed
         return body
 
     def formatted_prompt(self):
         """
-         Here we format the first return value of /v1/articles/count
-         into something that adds commas to triple digit (etc) values.
+        Here we format the first return value of /v1/articles/count
+        into something that adds commas to triple digit (etc) values.
         """
         try:
             return "({:,}) > ".format(
@@ -56,23 +58,23 @@ class repl(cmd.Cmd):
         except:
             return "no connection> "
 
-    def do_setkey(self,key):
+    def do_setkey(self, key):
         "Sets the API key to transmit requests with."
         if key:
             self.c.key = key
-            print 'Changed active API key to "%s"' % key
+            print('Changed active API key to "%s"' % key)
         else:
-            print "Usage: setkey <key>"
+            print("Usage: setkey <key>")
 
-    def do_use(self,key):
+    def do_use(self, key):
         "Alias of setkey."
         self.do_setkey(key)
 
-    def do_getkey(self,line):
+    def do_getkey(self, line):
         "Displays the current API key."
-        print self.c.key
+        print(self.c.key)
 
-    def do_get(self,line):
+    def do_get(self, line):
         """
         Sends GET requests
         EG: get articles
@@ -82,35 +84,33 @@ class repl(cmd.Cmd):
         response = self.c._send_request(line)
         self.display(response)
 
-    def do_put(self,line):
+    def do_put(self, line):
         """
         Creates a new feed or feed group.
         EG: put feedgroups name=HN
         """
-        if not ' ' in line:
-            print "Need data to transmit."
+        if ' ' not in line:
+            print("Need data to transmit.")
         else:
-            line, body = line.split(' ',1)
+            line, body = line.split(' ', 1)
             body = self.parse_args(body)
             response = self.c._send_request(line, 'PUT', body)
             self.display(response)
 
-
-    def do_post(self,line):
+    def do_post(self, line):
         """
         Modifies an existing feed or feed group.
         EG: post feeds/SomeFeed schedule="20 3 2! * *"
         """
-
-        if not ' ' in line:
-            print "Need data to transmit."
+        if ' ' not in line:
+            print("Need data to transmit.")
         else:
-            line, body = line.split(' ',1)
+            line, body = line.split(' ', 1)
             body = self.parse_args(body)
             response = self.c._send_request(line, 'POST', body)
             self.display(response)
 
-    def do_exit(self,line):
+    def do_exit(self, line):
         try:
             _curses.endwin()
         except _curses.error:
@@ -118,7 +118,7 @@ class repl(cmd.Cmd):
         finally:
             raise SystemExit
 
-    def do_read(self,line):
+    def do_read(self, line):
         """
         Usage: read <article_uid>
         Pipes article content into the system pager.
@@ -128,39 +128,38 @@ class repl(cmd.Cmd):
         then = time.time()
         response = self.c._send_request("articles/" + line)
         if response[1] != 200:
-            print response[1]
+            print(response[1])
             return
 
         data = response[0]
 
-        if not 'content' in data:
-            print None
+        if 'content' not in data:
+            print(None)
         else:
-
             p = Popen(['less', '-P', data['title']], stdin=PIPE)
 
             try:
                 duration = tconv(int(then) - int(data['created']))
-                p.stdin.write('%s\n(%i paragraphs, fetched %s ago)\n%s\n\n' % \
-                    (data['title'].encode("utf-8", "ignore"),
-                    len(data['content'].encode("utf-8","ignore").split("\n"))/2+1,
+                header = '%s\n(%i paragraphs, fetched %s ago)\n%s\n\n' % (
+                    data['title'],
+                    len(data['content'].split("\n")) // 2 + 1,
                     duration,
-                    data['url'].encode("utf-8","ignore")))
+                    data['url']
+                )
+                p.stdin.write(header.encode('utf-8', 'replace'))
 
-                content = data['content'].encode("utf-8", "ignore")
-                # Get TTY width and wrap the text
+                content = data['content']
                 if self.width == "auto":
                     s = _curses.initscr()
                     width = s.getmaxyx()[1]
                     _curses.endwin()
-
                 else:
                     width = self.width
 
                 content = '\n'.join(
                     textwrap.wrap(content, width, break_long_words=False, replace_whitespace=False)
                 )
-                p.stdin.write(content)
+                p.stdin.write(content.encode('utf-8', 'replace'))
 
             except IOError as e:
                 if e.errno == errno.EPIPE or e.errno == errno.EINVAL:
@@ -170,24 +169,22 @@ class repl(cmd.Cmd):
 
             p.stdin.close()
             p.wait()
-            now = time.time()
-            duration = tconv(now-then)
-#            print "\n%s" % duration
 
-    def do_delete(self,line):
+    def do_delete(self, line):
         """
         Sends a DELETE request.
         EG: delete feeds/somefeed
         """
         if ' ' in line:
-            line, body = line.split(' ',1)
+            line, body = line.split(' ', 1)
             body = self.parse_args(body)
-        else: body = ''
+        else:
+            body = ''
         response = self.c._send_request(line, 'DELETE', body)
         self.display(response)
 
-    def do_EOF(self,line):
-        print "^D",
+    def do_EOF(self, line):
+        print("^D", end=' ')
         return True
 
     def postcmd(self, stop, line):
@@ -198,7 +195,7 @@ class repl(cmd.Cmd):
         pass
 
     def postloop(self):
-        print
+        print()
 
     def do_width(self, line):
         """
@@ -208,12 +205,12 @@ class repl(cmd.Cmd):
         if line == "auto":
             self.width = "auto"
         elif line == "":
-            print "The current width is set to %s" % str(self.width)
+            print("The current width is set to %s" % str(self.width))
         else:
             try:
                 self.width = int(line)
             except:
-                print "width must be an integer."
+                print("width must be an integer.")
 
     def do_search(self, line):
         self.do_get("articles/search/" + line)
@@ -225,71 +222,60 @@ class repl(cmd.Cmd):
         name is supplied, or sets the theme to use.
         """
         if not self.highlight:
-            print "For syntax highlighting you will need to install the Pygments package."
-            print "sudo pip install pygments"
+            print("For syntax highlighting you will need to install the Pygments package.")
+            print("sudo pip install pygments")
             return
         if style:
             self.style = style
-            print 'Changed style to "%s"' % style
+            print('Changed style to "%s"' % style)
         else:
-            print ', '.join(self.AVAILABLE_STYLES)
-            print 'Currently using "%s"' % self.style
+            print(', '.join(self.AVAILABLE_STYLES))
+            print('Currently using "%s"' % self.style)
 
     def display(self, response):
         if self.highlight:
-            print response[1]
-            print highlight(json.dumps(response[0],indent=4), JsonLexer(), Terminal256Formatter(style=self.style))
-        else: self.c.p(response)
+            print(response[1])
+            print(highlight(json.dumps(response[0], indent=4), JsonLexer(), Terminal256Formatter(style=self.style)))
+        else:
+            self.c.p(response)
 
 def reqwrap(func):
     def wrapper(*args, **kwargs):
-        try: return func(*args, **kwargs)
-        except: return ({'error':'Connection refused.'}, 000)
+        try:
+            return func(*args, **kwargs)
+        except:
+            return ({'error': 'Connection refused.'}, 000)
     return wrapper
 
 
-if __name__ == "__main__":
-    parser = optparse.OptionParser(prog="python -m emissary.repl")
-    parser.add_option("--host", dest="host", action="store", default='localhost:6362/v1/')
-    parser.add_option("--ncurses", dest="ncurses", action="store_true", default=False)
-    (options,args) = parser.parse_args()
-
-    if options.ncurses:
+def start(url, api_key, ncurses=False):
+    if ncurses:
         r = window
     else:
         r = repl()
 
-    r.c = Client('','https://%s' % options.host, verify=False)
-
-    r.c.key = ""
-
-    try:
-        k = APIKey.query.first()
-    except Exception, e:
-        print "Encountered an error: " + e.message
-        print "This either means there's no URI exported as EMISSARY_DATABASE or you've exported a URI"
-        print "but haven't given Emissary a first run in order to write the schema and a primary API key."
-        raise SystemExit
-
-    if k: r.c.key = k.key
+    r.c = Client('', url, verify=False)
+    r.c.key = api_key
     r.c.verify_https = False
 
-    if not options.ncurses:
+    if not ncurses:
         r.highlight = highlight
         r.prompt = r.formatted_prompt()
         if highlight:
             r.AVAILABLE_STYLES = set(STYLE_MAP.keys())
-            if 'tango' in r.AVAILABLE_STYLES: r.style = 'tango'
+            if 'tango' in r.AVAILABLE_STYLES:
+                r.style = 'tango'
             else:
-                for s in r.AVAILABLE_STYLES: break
+                for s in r.AVAILABLE_STYLES:
+                    break
                 r.style = s
     r.c._send_request = reqwrap(r.c._send_request)
 
     try:
-        if options.ncurses:
+        if ncurses:
             window.start()
         else:
             r.cmdloop()
     except KeyboardInterrupt:
-        print "^C"
+        print("^C")
         raise SystemExit

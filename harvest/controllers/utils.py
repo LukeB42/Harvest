@@ -78,6 +78,8 @@ def uid():
     return str(uuid.uuid4())
 
 def tconv(seconds):
+    if not seconds:
+        return "< 1 second"
     minutes, seconds = divmod(seconds, 60)
     hours, minutes   = divmod(minutes, 60)
     days, hours      = divmod(hours, 24)

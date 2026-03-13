@@ -19,26 +19,26 @@
 # Luke Brooks, 2015
 # MIT License
 # Many big thanks to God, lord of universes.
-fifo = "/tmp/emissary.pipe"
+fifo = "/tmp/harvest.pipe"
 
-import os, stat
+import os
 if not os.path.exists(fifo):
 	try:
 		os.mkfifo(fifo)
-	except Exception, e:
-		cache['app'].log("Error creating %s: %s" % (fifo, e.message))
+	except Exception as e:
+		cache['app'].log("Error creating %s: %s" % (fifo, str(e)))
 
-# Emissary always executes scripts with an article and its feed in the namespace.
+# Harvest always executes scripts with an article and its feed in the namespace.
 
 # There is also a dictionary named cache, containing the app object.
-# Random aside but through the app object you can access the logging interface and the feed manager.
+# Through the app object you can access the logging interface and the feed manager.
 try:
 	# READER BEWARE: Use non-blocking IO or you won't be storing owt.
 	fd = os.open(fifo, os.O_CREAT | os.O_WRONLY | os.O_NONBLOCK)
-	os.write(fd, "%s: %s\n%s\n" % (feed.name, article.title, article.url))
+	os.write(fd, ("%s: %s\n%s\n" % (feed.name, article.title, article.url)).encode())
 	os.close(fd)
 	del fd
-except Exception, e: # Usually due to there not being a reader fd known to the kernel.
+except Exception as e: # Usually due to there not being a reader fd known to the kernel.
 	pass
 
-del os, stat, fifo
+del os, fifo

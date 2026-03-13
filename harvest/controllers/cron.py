@@ -175,8 +175,10 @@ class Event(object):
     async def check(self, t):
         if self.matchtime(t):
             self.running = True
-            await asyncio.to_thread(self.action, *self.args, **self.kwargs)
-            self.running = False
+            try:
+                await asyncio.to_thread(self.action, *self.args, **self.kwargs)
+            finally:
+                self.running = False
 
 class CronTab:
     def __init__(self, *events):

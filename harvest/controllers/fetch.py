@@ -20,9 +20,9 @@ if app.config['COMPRESS_ARTICLES']:
 # It permits us to only try a url four times every half an hour.
 seen = {}
 
-def get(url):
+def get(url, timeout=30):
     headers = {"User-Agent": "Harvest " + app.version}
-    return requests.get(url, headers=headers, verify=False)
+    return requests.get(url, headers=headers, verify=False, timeout=timeout)
 
 def fetch_feed(feed_id, log):
     """

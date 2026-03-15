@@ -1,9 +1,9 @@
 import os, getpass
 
 if 'HARVEST_DATABASE' not in os.environ:
-    print('You need to export a URI for HARVEST_DATABASE')
+    print('Warning: HARVEST_DATABASE is not set.')
     print('Eg: export HARVEST_DATABASE="sqlite:////home/%s/.harvest.db"' % getpass.getuser())
-    raise SystemExit
+    SQLALCHEMY_DATABASE_URI = ''
 else:
     SQLALCHEMY_DATABASE_URI = os.environ['HARVEST_DATABASE']
 

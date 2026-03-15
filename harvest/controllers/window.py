@@ -301,7 +301,8 @@ class Window(object):
             return
 
         if character != -1:
-            [pane.process_input(character) for pane in self if pane.active]
+            for pane in [p for p in self if p.active]:
+                pane.process_input(character)
 
             if self.debug:
                 self.addstr(self.height - 1, self.width // 2, "    ")

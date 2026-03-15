@@ -181,3 +181,6 @@ def cli():
 
     uvloop.install()
     asyncio.run(main(options))
+
+if __name__ == '__main__':
+    cli()

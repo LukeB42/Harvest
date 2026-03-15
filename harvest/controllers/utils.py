@@ -66,7 +66,7 @@ def gzipped(f):
             response.data = gzip_buffer.getvalue()
             response.headers['Content-Encoding'] = 'gzip'
             response.headers['Vary'] = 'Accept-Encoding'
-            response.headers['Content-Length'] = len(response.data.replace(b' ', b''))
+            response.headers['Content-Length'] = len(response.data)
 
             return response
 

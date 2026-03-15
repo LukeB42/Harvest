@@ -93,7 +93,10 @@ class Feeds(Pane):
         h       = self.height or 0
         visible = self.items[self.offset:self.offset + h]
         for i, item in enumerate(visible):
-            colours = palette(*self.sel) if item[0] else palette(*self.col)
+            if item[0]:
+                colours = palette("black", "green") if self.active else palette(*self.sel)
+            else:
+                colours = palette(*self.col)
             text    = ' ' + item[1]
             text   += ' ' * max(0, self.width - len(text))
             self.change_content(i, text + '\n', ALIGN_LEFT, colours)
@@ -271,7 +274,10 @@ class Articles(Pane):
         visible = self.items[self.offset:self.offset + h]
         for i, item in enumerate(visible):
             if item[0]:
-                colours = palette(*self.avail) if item[3] else palette(*self.sel)
+                if self.active:
+                    colours = palette(*self.avail) if item[3] else palette(*self.sel)
+                else:
+                    colours = palette(*self.sel)
             else:
                 colours = palette(*self.col)
             ts   = datetime.datetime.fromtimestamp(item[4]).strftime('%d-%m-%y %H:%M')

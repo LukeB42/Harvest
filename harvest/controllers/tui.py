@@ -197,6 +197,22 @@ class Feeds(Pane):
             self.window.window.clear()
             return
 
+        if character in (114, 82):  # r/R - refresh feed list
+            idx     = self._selected_index()
+            current = self.items[idx] if self.items else None
+            sel_group, sel_feed = (current[2], current[3]) if current else (None, None)
+            self.fetch_items()
+            # Restore selection to the same feed if it still exists
+            if sel_feed is not None:
+                for i, item in enumerate(self.items):
+                    if item[2] == sel_group and item[3] == sel_feed:
+                        for it in self.items:
+                            it[0] = 0
+                        self._select(i)
+                        break
+            self.window.window.clear()
+            return
+
         if character in (261, 10, 13):  # right arrow or enter - activate feed and go to articles
             self._activate_selection()
             self.active = False

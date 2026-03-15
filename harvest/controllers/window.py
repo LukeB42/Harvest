@@ -241,7 +241,8 @@ class Window(object):
                     else:
                         # ---- word / char wrapping ---- #
                         x = 0
-                        if top_left_left + dw > top_right_left - top_left_left:
+                        pane_width = top_right_left - top_left_left
+                        if dw > pane_width:
                             if pane.wrap == 1 or pane.wrap is True:
                                 words = line.split()
                             else:
@@ -259,7 +260,7 @@ class Window(object):
                                     if len(j) > 1 and j[0] == ' ':
                                         j = j[1:]
                                     jw = display_width(j)
-                                    avail = top_right_left - top_left_left + x
+                                    avail = top_right_left - top_left_left - x
                                     if jw > avail:
                                         if not c:
                                             y -= 1
@@ -271,6 +272,9 @@ class Window(object):
 
                             x = 0
                             continue
+                        else:
+                            # Line fits — still clip it to the pane width
+                            line = truncate_to_display_width(line, pane_width - x)
 
                     # ---- draw ---- #
                     if top_left_top > top_right_top and y >= top_left_top:
@@ -517,6 +521,10 @@ class Window(object):
         self.update_window_size()
         if h >= self.height or w >= self.width:
             return
+        max_cols = self.width - w
+        if max_cols <= 0:
+            return
+        text = truncate_to_display_width(text, max_cols)
         try:
             self.window.addstr(h, w, text, attrs)
         except Exception:

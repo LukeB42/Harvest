@@ -244,6 +244,8 @@ class Articles(Pane):
         self.items        = []
         self.offset       = 0
         self.feed_context = None  # None = all feeds, or (group_name, feed_name)
+        self.per_page     = 100
+        self.has_more     = False
 
     def update(self):
         self.content = []
@@ -276,6 +278,8 @@ class Articles(Pane):
             self.offset = new_idx
         elif new_idx >= self.offset + h:
             self.offset = new_idx - h + 1
+        if new_idx == len(self.items) - 1 and self.has_more:
+            self.fetch_more()
 
     def process_input(self, character):
         if character in (10, 13, 261):  # enter/right - open selected article
@@ -332,6 +336,10 @@ class Articles(Pane):
             idx = self._selected_index()
             if idx + 1 < len(self.items):
                 self._select(idx + 1)
+            elif self.has_more:
+                self.fetch_more()
+                if idx + 1 < len(self.items):
+                    self._select(idx + 1)
 
         elif character == 339:  # pgup - first visible item, no scrolling
             if not self.items: return
@@ -354,25 +362,52 @@ class Articles(Pane):
             self._select(len(self.items) - 1)
 
     def fetch_items(self):
-        h = self.height or 10
         if self.feed_context:
             group, name = self.feed_context
-            url = "feeds/%s/%s/articles?per_page=%i" % (group, name, h)
+            url = "feeds/%s/%s/articles?per_page=%i" % (group, name, self.per_page)
         else:
-            url = "articles?per_page=%i" % h
+            url = "articles?per_page=%i" % self.per_page
         (res, status) = self.window.c.get(url)
         if status == 200:
             self.fill_menu(res)
+            self.has_more = len(res.get("data", [])) >= self.per_page
         else:
             status_pane = self.window.get("status")
             if status_pane:
                 status_pane.status = str(res)
 
+    def fetch_more(self):
+        if not self.items:
+            return
+        cursor = self.items[-1][4]
+        if self.feed_context:
+            group, name = self.feed_context
+            url = "feeds/%s/%s/articles?per_page=%i&before=%s" % (group, name, self.per_page, cursor)
+        else:
+            url = "articles?per_page=%i&before=%s" % (self.per_page, cursor)
+        (res, status) = self.window.c.get(url)
+        if status != 200:
+            self.has_more = False
+            return
+        new_data      = res.get("data", [])
+        existing_uids = {item[2] for item in self.items}
+        for r in new_data:
+            if 'uid' not in r or r['uid'] in existing_uids:
+                continue
+            self.items.append([
+                0, r['title'], r['uid'], r['content_available'],
+                r.get('created', 0)
+            ])
+        self.has_more = len(new_data) >= self.per_page
+
     def fill_menu(self, res):
-        self.items   = []
-        self.content = []
-        self.offset  = 0
+        self.items    = []
+        self.content  = []
+        self.offset   = 0
+        self.has_more = False
         for r in res["data"]:
+            if 'uid' not in r:
+                continue
             self.items.append([
                 0, r['title'], r['uid'], r['content_available'],
                 r.get('created', 0)
@@ -444,8 +479,11 @@ class StatusLine(Pane):
     tagline   = "Thanks God."
 
     def update(self):
+        feeds = self.window.get("feeds")
         if self.searching:
             self.change_content(0, "/" + self.buffer, palette("black", "white"))
+        elif feeds and feeds.searching:
+            self.change_content(0, "/" + feeds.search_buf, palette("black", "white"))
         else:
             state  = self.tagline
             state += ' ' * ((self.width // 2) - len(self.tagline) - (len(str(self.status)) // 2))

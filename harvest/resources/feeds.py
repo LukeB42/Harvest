@@ -1,6 +1,7 @@
 # _*_ coding: utf-8 _*_
 # This file provides the HTTP endpoints for operating on individual feeds.
 import asyncio
+from datetime import datetime
 from harvest import app, db
 from flask import request
 from flask_restful import Resource, reqparse, abort
@@ -110,22 +111,21 @@ class FeedArticleCollection(Resource):
             abort(404)
 
         parser = ArgsParser()
-        parser.add_argument("page",     type=int,  default=1)
-        parser.add_argument("per_page", type=int,  default=10)
-        parser.add_argument("content",  type=bool, default=None)
+        parser.add_argument("page",     type=int,   default=1)
+        parser.add_argument("per_page", type=int,   default=10)
+        parser.add_argument("content",  type=bool,  default=None)
+        parser.add_argument("before",   type=float, default=None)
         args = parser.parse_args()
 
+        filters = [Article.key == key, Article.feed == feed]
+        if args.before is not None:
+            filters.append(Article.created < datetime.fromtimestamp(args.before))
         if args.content == True:
-            query = Article.query.filter(and_(Article.key == key, Article.content != None, Article.feed == feed)) \
-                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
-            return make_response(request.url, query)
-
+            filters.append(Article.content != None)
         elif args.content == False:
-            query = Article.query.filter(and_(Article.key == key, Article.content == None, Article.feed == feed)) \
-                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
-            return make_response(request.url, query)
+            filters.append(Article.content == None)
 
-        query = Article.query.filter(and_(Article.key == key, Article.feed == feed)) \
+        query = Article.query.filter(and_(*filters)) \
                 .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
         return make_response(request.url, query)
 

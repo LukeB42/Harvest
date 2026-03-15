@@ -1,6 +1,7 @@
 # _*_ coding: utf-8 _*_
 # This file determines how articles are accessed.
 # You may also want to examine the Article class in harvest/models.py
+from datetime import datetime
 from harvest import db
 from flask import request
 from flask_restful import Resource, reqparse, abort
@@ -20,20 +21,22 @@ class ArticleCollection(Resource):
         key = auth()
 
         parser = ArgsParser()
-        parser.add_argument("page",     type=int,  default=1)
-        parser.add_argument("per_page", type=int,  default=10)
-        parser.add_argument("content",  type=bool, default=None)
+        parser.add_argument("page",     type=int,   default=1)
+        parser.add_argument("per_page", type=int,   default=10)
+        parser.add_argument("content",  type=bool,  default=None)
+        parser.add_argument("before",   type=float, default=None)
         args = parser.parse_args()
 
+        filters = [Article.key == key]
+        if args.before is not None:
+            filters.append(Article.created < datetime.fromtimestamp(args.before))
         if args.content == True:
-            query = Article.query.filter(and_(Article.key == key, Article.content != None)) \
-                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
+            filters.append(Article.content != None)
         elif args.content == False:
-            query = Article.query.filter(and_(Article.key == key, Article.content == None)) \
-                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
-        else:
-            query = Article.query.filter(Article.key == key) \
-                    .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
+            filters.append(Article.content == None)
+
+        query = Article.query.filter(and_(*filters)) \
+                .order_by(desc(Article.created)).paginate(page=args.page, per_page=args.per_page)
 
         return make_response(request.url, query)
 

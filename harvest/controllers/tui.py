@@ -235,11 +235,16 @@ class Feeds(Pane):
         elif character == 258:  # down
             if idx + 1 < n:
                 self._select(idx + 1)
-        elif character == 339:  # pgup - move to first visible item, no scrolling
+        elif character == 339:  # pgup
+            if idx == self.offset:
+                self.offset = max(0, self.offset - h)
             for item in self.items:
                 item[0] = 0
             self.items[self.offset][0] = 1
-        elif character == 338:  # pgdown - move to last visible item, no scrolling
+        elif character == 338:  # pgdown
+            last_vis = min(self.offset + h - 1, n - 1)
+            if idx == last_vis:
+                self.offset = min(self.offset + h, n - 1)
             last_vis = min(self.offset + h - 1, n - 1)
             for item in self.items:
                 item[0] = 0
@@ -260,18 +265,28 @@ class Articles(Pane):
 
     def __init__(self, name):
         super().__init__(name)
-        self.items        = []
-        self.offset       = 0
-        self.feed_context = None  # None = all feeds, or (group_name, feed_name)
-        self.per_page     = 100
-        self.has_more     = False
+        self.items          = []
+        self.offset         = 0
+        self.feed_context   = None  # None = all feeds, or (group_name, feed_name)
+        self.per_page       = 100
+        self.has_more       = False
+        self.bottom_aligned = False
 
     def update(self):
         self.content = []
         if not self.items:
             self.fetch_items()
-        h       = self.height or 0
-        visible = self.items[self.offset:self.offset + h]
+        h           = self.height or 0
+        n           = len(self.items)
+        from_offset = n - self.offset
+
+        if self.bottom_aligned and from_offset < h:
+            display_offset = max(0, n - h)
+            visible = self.items[display_offset:]
+        else:
+            self.bottom_aligned = False
+            visible = self.items[self.offset:self.offset + h]
+
         for i, item in enumerate(visible):
             if item[0]:
                 if self.active:
@@ -349,6 +364,7 @@ class Articles(Pane):
 
         elif character == 259:  # up
             if not self.items: return
+            self.bottom_aligned = False
             idx = self._selected_index()
             if idx > 0:
                 self._select(idx - 1)
@@ -363,20 +379,35 @@ class Articles(Pane):
                 if idx + 1 < len(self.items):
                     self._select(idx + 1)
 
-        elif character == 339:  # pgup - first visible item, no scrolling
+        elif character == 339:  # pgup
             if not self.items: return
+            self.bottom_aligned = False
+            h   = self.height or 1
+            idx = self._selected_index()
+            if idx == self.offset:
+                self.offset = max(0, self.offset - h)
             for item in self.items: item[0] = 0
             self.items[self.offset][0] = 1
 
-        elif character == 338:  # pgdown - last visible item, no scrolling
+        elif character == 338:  # pgdown
             if not self.items: return
             h        = self.height or 1
-            last_vis = min(self.offset + h - 1, len(self.items) - 1)
+            n        = len(self.items)
+            idx      = self._selected_index()
+            last_vis = min(self.offset + h - 1, n - 1)
+            if idx == last_vis:
+                if last_vis == n - 1 and self.has_more:
+                    self.fetch_more()
+                    n = len(self.items)
+                self.offset = min(self.offset + h, n - 1)
+                self.bottom_aligned = (n - self.offset) < h
+            last_vis = min(self.offset + h - 1, n - 1)
             for item in self.items: item[0] = 0
             self.items[last_vis][0] = 1
 
         elif character == 262:  # home - first item
             if not self.items: return
+            self.bottom_aligned = False
             self._select(0)
 
         elif character == 360:  # end - last item
@@ -460,19 +491,20 @@ class Reader(Pane):
 
     def process_input(self, character):
         self.window.window.clear()
+        lines   = self.data.split('\n')
+        max_pos = max(0, len(lines) - 1)
         if character == 259:    # Up arrow
-            if self.position != 0:
-                self.position -= 1
+            self.position = max(0, self.position - 1)
         elif character == 258:  # Down arrow
-            self.position += 1
+            self.position = min(max_pos, self.position + 1)
         elif character == 339:  # Page up
-            if self.position - self.height < 0:
-                self.position = 0
-            else:
-                self.position -= self.height
+            self.position = max(0, self.position - self.height)
         elif character == 338:  # Page down
-            if not self.position + self.height > len(self.data.split('\n')):
-                self.position += self.height
+            self.position = min(max_pos, self.position + self.height)
+        elif character == 262:  # Home
+            self.position = 0
+        elif character == 360:  # End
+            self.position = max_pos
 
         elif character in [260, 9]:  # Left arrow or tab
             articles = self.window.get("articles")

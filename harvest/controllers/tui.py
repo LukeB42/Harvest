@@ -200,7 +200,7 @@ class Feeds(Pane):
             self.window.window.clear()
             return
 
-        if character in (114, 82):  # r/R - refresh feed list
+        if character in (114, 82, 269):  # r/R/F5 - refresh feed list
             idx     = self._selected_index()
             current = self.items[idx] if self.items else None
             sel_group, sel_feed = (current[2], current[3]) if current else (None, None)
@@ -213,6 +213,8 @@ class Feeds(Pane):
                             it[0] = 0
                         self._select(i)
                         break
+            if character == 269:  # F5 - also refresh articles
+                self.window.get("articles").fetch_items()
             self.window.window.clear()
             return
 
@@ -354,7 +356,11 @@ class Articles(Pane):
                     feeds.active = False
                 self.window.window.clear()
 
-        elif character == 114:  # r - refresh
+        elif character in (114, 269):  # r/F5 - refresh articles (F5 also refreshes feeds)
+            if character == 269:
+                feeds = self.window.get("feeds")
+                if feeds:
+                    feeds.fetch_items()
             self.fetch_items()
 
         elif character == 9:  # tab - go to reader
@@ -575,6 +581,174 @@ class StatusLine(Pane):
                 article = getattr(reader, "article", None)
                 if article:
                     l['article'] = article
+
+                try:
+                    import anthropic as _anthropic
+                    import json as _json
+
+                    _c      = self.window.c
+                    _client = _anthropic.Anthropic()
+                    _model  = "claude-sonnet-4-5"
+
+                    _articles_pane = self.window.panes[1][2]
+                    _current_items = _articles_pane.items if _articles_pane else []
+
+                    _system = (
+                        "You are a research assistant embedded in a terminal RSS reader called Harvest. "
+                        "You have tools to list, search, and read articles from the user's feeds. "
+                        "The user's current article list has %d items. "
+                        "Never use markdown formatting unless explicitly asked. "
+                        "Respond in plain prose only. "
+                        "When the user says 'my current' or refers to their current article or current articles list, use the read_current tool. "
+                        "When the user says 'read me ...' or 'read ... to me', use the cat tool to print the content directly to the user." % len(_current_items)
+                    )
+
+                    _tools = [
+                        {
+                            "name": "read_current",
+                            "description": "Fetch the full content of the article currently selected in the user's article list. Use this when the user refers to 'my current' article or 'my current articles list'.",
+                            "input_schema": {"type": "object", "properties": {}},
+                        },
+                        {
+                            "name": "cat",
+                            "description": "Print text directly to the user's terminal. Use this when the user says 'read me ...' or 'read ... to me'.",
+                            "input_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["text"],
+                            },
+                        },
+                        {
+                            "name": "feeds",
+                            "description": "List all feed groups and the feeds within them, including each feed's name and group.",
+                            "input_schema": {"type": "object", "properties": {}},
+                        },
+                        {
+                            "name": "list",
+                            "description": (
+                                "List articles. Without group/feed returns articles across all feeds. "
+                                "With group and feed returns articles only from that feed. "
+                                "Use the feeds tool first to discover valid group and feed names."
+                            ),
+                            "input_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "group":    {"type": "string", "description": "Feed group name"},
+                                    "feed":     {"type": "string", "description": "Feed name"},
+                                    "page":     {"type": "integer", "default": 1},
+                                    "per_page": {"type": "integer", "default": 50},
+                                },
+                            },
+                        },
+                        {
+                            "name": "search",
+                            "description": "Search article titles for the given terms.",
+                            "input_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "terms": {"type": "string"},
+                                },
+                                "required": ["terms"],
+                            },
+                        },
+                        {
+                            "name": "read",
+                            "description": "Fetch the full content of an article by its UID.",
+                            "input_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "uid": {"type": "string"},
+                                },
+                                "required": ["uid"],
+                            },
+                        },
+                    ]
+
+                    def _run_tool(name, inp):
+                        if name == "read_current":
+                            selected = next((it for it in _articles_pane.items if it[0]), None)
+                            if not selected:
+                                return {"error": "no article selected"}
+                            res, st = _c.get("articles/%s" % selected[2])
+                            return res if st == 200 else {"error": st}
+                        elif name == "cat":
+                            print(inp.get("text", ""))
+                            return {}
+                        elif name == "feeds":
+                            res, st = _c.get("feeds?per_page=100")
+                            if st != 200:
+                                return {"error": st}
+                            return [
+                                {"group": g["name"], "feeds": [f["name"] for f in g.get("feeds", [])]}
+                                for g in res.get("data", [])
+                            ]
+                        elif name == "list":
+                            group = inp.get("group")
+                            feed  = inp.get("feed")
+                            page     = inp.get("page", 1)
+                            per_page = inp.get("per_page", 50)
+                            if group and feed:
+                                url = "feeds/%s/%s/articles?page=%d&per_page=%d" % (group, feed, page, per_page)
+                            else:
+                                url = "articles?page=%d&per_page=%d" % (page, per_page)
+                            res, st = _c.get(url)
+                        elif name == "search":
+                            res, st = _c.get("articles/search/%s?per_page=50" % inp["terms"])
+                        elif name == "read":
+                            res, st = _c.get("articles/%s" % inp["uid"])
+                        else:
+                            return {"error": "unknown tool"}
+                        return res if st == 200 else {"error": st}
+
+                    def claude(prompt, model=_model):
+                        """Send a single prompt to Claude and return the response text."""
+                        r = _client.messages.create(
+                            model=model, max_tokens=8096, system=_system,
+                            messages=[{"role": "user", "content": prompt}],
+                        )
+                        return r.content[0].text
+
+                    def chat(model=_model):
+                        """Turn-based chat with Claude. Claude can use list, search, read tools."""
+                        messages = []
+                        print("\nChatting with Claude (tools: list, search, read). Empty input or ^D to quit.\n")
+                        while True:
+                            try:
+                                user_input = input(format(_c.get("articles/count")[0], ",") + "> ").strip()
+                            except (EOFError, KeyboardInterrupt):
+                                print()
+                                break
+                            if not user_input:
+                                break
+                            messages.append({"role": "user", "content": user_input})
+                            while True:
+                                r = _client.messages.create(
+                                    model=model, max_tokens=8096, system=_system,
+                                    tools=_tools, messages=messages,
+                                )
+                                tool_uses  = [b for b in r.content if b.type == "tool_use"]
+                                text_parts = [b.text for b in r.content if b.type == "text"]
+                                if text_parts:
+                                    print("claude> " + "\n".join(text_parts) + "\n")
+                                messages.append({"role": "assistant", "content": r.content})
+                                if r.stop_reason != "tool_use" or not tool_uses:
+                                    break
+                                results = []
+                                for tu in tool_uses:
+                                    print("[tool: %s %s]" % (tu.name, tu.input))
+                                    results.append({
+                                        "type":        "tool_result",
+                                        "tool_use_id": tu.id,
+                                        "content":     _json.dumps(_run_tool(tu.name, tu.input)),
+                                    })
+                                messages.append({"role": "user", "content": results})
+
+                    l["claude"] = claude
+                    l["chat"]   = chat
+                except ImportError:
+                    pass
 
                 self.window.stop()
                 print("\nStarting REPL. ^D to exit.")

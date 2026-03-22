@@ -299,6 +299,7 @@ class Window(object):
 
         if character in self.exit_keys:
             self.stop()
+            return
 
         if character == 12:    # ^L — force redraw
             self.window.clear()
